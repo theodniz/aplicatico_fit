@@ -1,0 +1,117 @@
+rules_version = '2';
+
+// =============================================================
+//  Regras de segurança do Firestore
+//
+//  A SEGURANÇA ESTÁ AQUI, NÃO NO APP. O app esconde botões e telas
+//  por conveniência; qualquer pessoa com a configuração web do
+//  projeto (que é pública) pode chamar a API do Firestore na mão.
+//  O que essa pessoa consegue fazer é decidido só por este arquivo.
+//
+//  Publicar: Console do Firebase → Firestore Database → Regras →
+//  colar este conteúdo → Publicar. (Ou `firebase deploy --only
+//  firestore:rules` com a Firebase CLI.)
+// =============================================================
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isSelf(userId) {
+      return signedIn() && request.auth.uid == userId;
+    }
+
+    // O papel vem do documento do PERFIL, lido no servidor — nunca de
+    // algo que o cliente envie.
+    function isAdmin() {
+      return signedIn()
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'ADMIN';
+    }
+
+    function validProfile(data) {
+      return data.keys().hasAll(['name', 'email', 'role', 'created_at', 'updated_at'])
+        && data.name is string && data.name.size() >= 1 && data.name.size() <= 80
+        && data.email is string
+        && data.role in ['USER', 'ADMIN'];
+    }
+
+    // ---------------------------------------------------------
+    // Perfis
+    // ---------------------------------------------------------
+    match /users/{userId} {
+      // Cada um lê o próprio perfil; o admin lê (e lista) todos.
+      allow read: if isSelf(userId) || isAdmin();
+
+      // Cadastro: o próprio usuário só cria o seu, e SEMPRE como USER
+      // — ninguém se cadastra administrador. O admin cria perfis de
+      // outras pessoas, com qualquer papel.
+      allow create: if validProfile(request.resource.data) && (
+        (isSelf(userId) && request.resource.data.role == 'USER'
+          && request.resource.data.email == request.auth.token.email)
+        || (isAdmin() && !isSelf(userId))
+      );
+
+      // Atualização:
+      //  - o próprio usuário muda o nome, mas NUNCA o papel nem o
+      //    e-mail (trava contra escalonamento de privilégio);
+      //  - o admin muda nome e papel de OUTRAS contas. Como ninguém
+      //    altera o próprio papel, o último admin nunca se rebaixa.
+      allow update: if validProfile(request.resource.data)
+        && request.resource.data.email == resource.data.email
+        && (
+          (isSelf(userId) && request.resource.data.role == resource.data.role)
+          || (isAdmin() && !isSelf(userId))
+        );
+
+      // Excluir conta exige o Admin SDK (console do Firebase).
+      allow delete: if false;
+
+      // -------------------------------------------------------
+      // Dados de treino: exercícios, fichas e sessões.
+      //
+      // Só o DONO lê e escreve — inclusive para administradores.
+      // O isolamento vale para todo mundo.
+      // -------------------------------------------------------
+      match /exercises/{exerciseId} {
+        allow read, delete: if isSelf(userId);
+        allow create, update: if isSelf(userId)
+          && request.resource.data.user_id == userId
+          && request.resource.data.name is string
+          && request.resource.data.name.size() >= 2
+          && request.resource.data.name.size() <= 100;
+      }
+
+      match /workouts/{workoutId} {
+        allow read, delete: if isSelf(userId);
+        allow create, update: if isSelf(userId)
+          && request.resource.data.user_id == userId
+          && request.resource.data.start_date is string
+          && request.resource.data.end_date is string
+          // 'YYYY-MM-DD' compara na ordem cronológica.
+          && request.resource.data.end_date >= request.resource.data.start_date
+          && request.resource.data.days is list
+          && request.resource.data.days.size() <= 7;
+      }
+
+      match /sessions/{sessionId} {
+        allow read, delete: if isSelf(userId);
+        allow create: if isSelf(userId)
+          && request.resource.data.user_id == userId
+          && request.resource.data.status == 'in_progress';
+        // Uma sessão finalizada não volta a ser editada.
+        allow update: if isSelf(userId)
+          && request.resource.data.user_id == userId
+          && resource.data.status == 'in_progress';
+      }
+    }
+
+    // Qualquer outro caminho é negado.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

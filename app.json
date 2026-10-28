@@ -1,17 +1,17 @@
 {
   "expo": {
-    "name": "academia-app-native",
-    "slug": "academia-app-native",
+    "name": "Academia",
+    "slug": "academia-fichas",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "light",
+    "userInterfaceStyle": "dark",
     "ios": {
       "supportsTablet": true
     },
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
+        "backgroundColor": "#0d0f14",
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
@@ -20,6 +20,26 @@
     },
     "web": {
       "favicon": "./assets/favicon.png"
-    }
+    },
+    "backgroundColor": "#0d0f14",
+    "plugins": [
+      "expo-font",
+      [
+        "expo-image-picker",
+        {
+          "cameraPermission": "O app usa a câmera para você tirar fotos de registro dos seus treinos.",
+          "microphonePermission": false
+        }
+      ],
+      [
+        "expo-media-library",
+        {
+          "savePhotosPermission": "O app salva as fotos de registro dos treinos na sua galeria.",
+          "granularPermissions": [
+            "photo"
+          ]
+        }
+      ]
+    ]
   }
 }
